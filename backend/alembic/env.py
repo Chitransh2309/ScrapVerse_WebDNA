@@ -51,7 +51,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     connect_args = {}
-    if db_url.startswith("postgresql+asyncpg"):
+    if "+asyncpg" in db_url:
         connect_args["statement_cache_size"] = 0
 
     connectable = async_engine_from_config(
