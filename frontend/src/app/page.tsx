@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { fetchCompanies, fetchGenome, fetchMutations, fetchAgentRuns, fetchScrapers, triggerSequence, createCompany, API_BASE } from "@/lib/api"
+import { useCallback, useEffect, useState } from "react"
+import { fetchCompanies, fetchGenome, fetchMutations, fetchAgentRuns, fetchScrapers, triggerSequence, fetchSequenceStatus, createCompany, API_BASE } from "@/lib/api"
 import { Activity, AlertTriangle, ShieldAlert, Cpu, HeartPulse, RefreshCw, Plus } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { format } from 'date-fns'
@@ -9,16 +9,19 @@ import { format } from 'date-fns'
 export default function Home() {
   const [companies, setCompanies] = useState<any[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
-  
+
   const [genome, setGenome] = useState<any>(null)
   const [mutations, setMutations] = useState<any[]>([])
   const [agentRuns, setAgentRuns] = useState<any[]>([])
   const [scrapers, setScrapers] = useState<any[]>([])
-  
+
   const [loading, setLoading] = useState(true)
   const [sequencing, setSequencing] = useState(false)
+  const [sequenceStatus, setSequenceStatus] = useState<string | null>(null)
+  const [sequenceError, setSequenceError] = useState<string | null>(null)
   const [newCompanyName, setNewCompanyName] = useState("")
   const [isAdding, setIsAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   // Polling state
   useEffect(() => {
@@ -34,34 +37,60 @@ export default function Home() {
     })
   }, [])
 
+  const loadData = useCallback(() => {
+    if (!selectedCompanyId) return
+    fetchGenome(selectedCompanyId).then(data => {
+      if (data && data.traits) setGenome(data)
+      else setGenome(null)
+    }).catch(() => {})
+    fetchMutations(selectedCompanyId).then(data => setMutations(data)).catch(() => {})
+    fetchAgentRuns(selectedCompanyId).then(data => setAgentRuns(data)).catch(() => {})
+    fetchScrapers(selectedCompanyId).then(data => setScrapers(data)).catch(() => {})
+    // Also refresh the companies list so a domain resolved in the background
+    // (after adding a company) shows up without a manual refresh.
+    fetchCompanies().then(data => setCompanies(data)).catch(() => {})
+  }, [selectedCompanyId])
+
   useEffect(() => {
     if (!selectedCompanyId) return
-
-    const loadData = () => {
-      fetchGenome(selectedCompanyId).then(data => {
-        if (data && data.traits) setGenome(data)
-        else setGenome(null)
-      }).catch(() => {})
-      fetchMutations(selectedCompanyId).then(data => setMutations(data)).catch(() => {})
-      fetchAgentRuns(selectedCompanyId).then(data => setAgentRuns(data)).catch(() => {})
-      fetchScrapers(selectedCompanyId).then(data => setScrapers(data)).catch(() => {})
-    }
-
     loadData()
     const interval = setInterval(loadData, 5000) // Poll every 5s for the dashboard
     return () => clearInterval(interval)
-  }, [selectedCompanyId])
+  }, [selectedCompanyId, loadData])
 
   const handleSequence = async () => {
     if (!selectedCompanyId) return
     setSequencing(true)
-    await triggerSequence(selectedCompanyId)
-    setTimeout(() => setSequencing(false), 2000)
+    setSequenceError(null)
+    setSequenceStatus("queued")
+    try {
+      const job = await triggerSequence(selectedCompanyId)
+      if (!job.job_id) throw new Error("No job id returned")
+
+      // Poll the actual job status instead of assuming it's done after a fixed delay -
+      // sequencing (genome build + mutation detection + agent investigations) can take
+      // anywhere from seconds to several minutes.
+      while (true) {
+        await new Promise(r => setTimeout(r, 3000))
+        const job_status = await fetchSequenceStatus(selectedCompanyId, job.job_id)
+        setSequenceStatus(job_status.status)
+        if (job_status.status === "completed" || job_status.status === "failed" || job_status.error) {
+          break
+        }
+      }
+    } catch (e) {
+      console.error(e)
+      setSequenceError("Failed to run sequence. Please try again.")
+    } finally {
+      setSequencing(false)
+      loadData()
+    }
   }
 
   const handleAddCompany = async () => {
     if (!newCompanyName.trim()) return
     setIsAdding(true)
+    setAddError(null)
     try {
       const newCompany = await createCompany(newCompanyName.trim())
       const freshCompanies = await fetchCompanies()
@@ -70,6 +99,7 @@ export default function Home() {
       setNewCompanyName("")
     } catch (e) {
       console.error(e)
+      setAddError("Failed to add company. Please try again.")
     } finally {
       setIsAdding(false)
     }
@@ -111,7 +141,7 @@ export default function Home() {
                 onKeyDown={e => e.key === 'Enter' && handleAddCompany()}
                 className="bg-background border border-border text-sm rounded px-3 py-1 outline-none focus:ring-1 focus:ring-primary w-40"
               />
-              <button 
+              <button
                 onClick={handleAddCompany}
                 disabled={isAdding || !newCompanyName.trim()}
                 className="bg-secondary text-secondary-foreground hover:bg-secondary/80 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
@@ -119,18 +149,22 @@ export default function Home() {
                 {isAdding ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                 Add
               </button>
+              {addError && <span className="text-xs text-red-400">{addError}</span>}
             </div>
           </div>
           <p className="text-muted-foreground text-lg">{selectedCompany?.domain || "---"}</p>
         </div>
-        <button 
-          onClick={handleSequence}
-          disabled={sequencing || !selectedCompanyId}
-          className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50"
-        >
-          {sequencing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
-          {sequencing ? "Sequencing..." : "Force Sequence"}
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={handleSequence}
+            disabled={sequencing || !selectedCompanyId}
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {sequencing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+            {sequencing ? `Sequencing... (${sequenceStatus})` : "Force Sequence"}
+          </button>
+          {sequenceError && <span className="text-xs text-red-400">{sequenceError}</span>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

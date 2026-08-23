@@ -37,6 +37,13 @@ export async function fetchScrapers(companyId: string) {
 
 export async function triggerSequence(companyId: string) {
   const res = await fetch(`${API_BASE}/companies/${companyId}/sequence`, { method: "POST" })
+  if (!res.ok) throw new Error(`Failed to start sequence (${res.status})`)
+  return res.json()
+}
+
+export async function fetchSequenceStatus(companyId: string, jobId: string) {
+  const res = await fetch(`${API_BASE}/companies/${companyId}/sequence/${jobId}`)
+  if (!res.ok) throw new Error(`Failed to fetch sequence status (${res.status})`)
   return res.json()
 }
 
@@ -46,5 +53,6 @@ export async function createCompany(name: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name })
   })
+  if (!res.ok) throw new Error(`Failed to create company (${res.status})`)
   return res.json()
 }

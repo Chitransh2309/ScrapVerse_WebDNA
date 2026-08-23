@@ -1,10 +1,10 @@
 import logging
 from typing import Optional
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.db.models.core import Company
 from pydantic import BaseModel
 
@@ -17,6 +17,18 @@ class CompanyCreate(BaseModel):
     domain: Optional[str] = None
 
 from app.db.models.evidence_models import Source
+
+
+def _provision_sources(db_company_id: str, company_name: str, domain: str) -> list[Source]:
+    return [
+        Source(
+            company_id=db_company_id,
+            type=src_type,
+            url=f"https://{domain}/{src_type}",
+            collector_id=f"serp_{src_type}_{company_name.lower().replace(' ', '_')}"
+        )
+        for src_type in ["careers", "products", "news"]
+    ]
 
 
 async def resolve_domain(company_name: str) -> str:
@@ -37,26 +49,47 @@ async def resolve_domain(company_name: str) -> str:
     return fallback
 
 
-@router.post("")
-async def create_company(company: CompanyCreate, db: AsyncSession = Depends(get_db)):
-    domain = company.domain or await resolve_domain(company.name)
+async def _finalize_domain_and_sources(company_id: str, company_name: str):
+    """Background task: resolve the real domain and provision sources without
+    blocking the create-company response on an external search call."""
+    domain = await resolve_domain(company_name)
+    async with AsyncSessionLocal() as db:
+        try:
+            db_company = await db.get(Company, company_id)
+            if not db_company:
+                return
+            db_company.domain = domain
+            for src in _provision_sources(company_id, company_name, domain):
+                db.add(src)
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to finalize domain/sources for '{company_name}': {e}")
+            await db.rollback()
 
-    db_company = Company(name=company.name, domain=domain)
+
+@router.post("")
+async def create_company(company: CompanyCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    if company.domain:
+        # Domain was given explicitly - no need to resolve or defer anything.
+        db_company = Company(name=company.name, domain=company.domain)
+        db.add(db_company)
+        await db.commit()
+        for src in _provision_sources(db_company.id, company.name, company.domain):
+            db.add(src)
+        await db.commit()
+        return {"id": db_company.id, "name": db_company.name, "domain": db_company.domain}
+
+    # No domain given: create the company immediately with a placeholder guess
+    # so the request returns fast, then resolve the real domain (and sources)
+    # in the background - resolving it via search takes several seconds.
+    placeholder_domain = company.name.lower().replace(" ", "") + ".com"
+    db_company = Company(name=company.name, domain=placeholder_domain)
     db.add(db_company)
     await db.commit()
 
-    # Auto-provision sources for the new company
-    for src_type in ["careers", "products", "news"]:
-        src = Source(
-            company_id=db_company.id,
-            type=src_type,
-            url=f"https://{domain}/{src_type}",
-            collector_id=f"serp_{src_type}_{company.name.lower().replace(' ', '_')}"
-        )
-        db.add(src)
-    await db.commit()
+    background_tasks.add_task(_finalize_domain_and_sources, db_company.id, company.name)
 
-    return {"id": db_company.id, "name": db_company.name, "domain": db_company.domain}
+    return {"id": db_company.id, "name": db_company.name, "domain": db_company.domain, "domain_pending": True}
 
 @router.get("")
 async def list_companies(db: AsyncSession = Depends(get_db)):
