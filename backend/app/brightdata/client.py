@@ -17,13 +17,13 @@ class BrightDataClient:
         if not BRIGHT_DATA_API_KEY:
             raise RuntimeError("BRIGHT_DATA_API_KEY is not configured")
 
-        target_url = f"https://www.google.com/search?q={quote(query)}&brd_json=1"
+        target_url = f"https://www.google.com/search?q={quote(query)}"
 
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
                 f"{BRIGHT_DATA_API_BASE}/request",
                 headers={"Authorization": f"Bearer {BRIGHT_DATA_API_KEY}"},
-                json={"zone": BRIGHT_DATA_SERP_ZONE, "url": target_url, "format": "raw"},
+                json={"zone": BRIGHT_DATA_SERP_ZONE, "url": target_url, "format": "json"},
             )
             response.raise_for_status()
 
