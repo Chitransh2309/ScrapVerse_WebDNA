@@ -1,59 +1,49 @@
-import asyncio
 import os
-import json
 import logging
-import subprocess
-from typing import Dict, Any
+from typing import Dict, Any, List
+from urllib.parse import quote
+import httpx
 
 logger = logging.getLogger(__name__)
 
-class BrightDataClient:
-    async def _run_bdata_cmd(self, *args: str) -> str:
-        npx_cmd = "npx.cmd" if os.name == 'nt' else "npx"
-        cmd = [npx_cmd, "--yes", "--package", "@brightdata/cli", "bdata"] + list(args)
-        logger.info(f"Running Bright Data CLI: {' '.join(cmd)}")
-        
-        try:
-            # Use asyncio.to_thread with subprocess.run to avoid NotImplementedError 
-            # with asyncio subprocesses on Windows under certain event loops (like uvicorn's)
-            import subprocess
-            
-            def run_sync():
-                return subprocess.run(
-                    cmd, 
-                    capture_output=True, 
-                    text=True, 
-                    encoding='utf-8', 
-                    errors='replace'
-                )
-                
-            process = await asyncio.to_thread(run_sync)
-            
-            if process.returncode != 0:
-                logger.error(f"bdata error: {process.stderr}")
-                raise RuntimeError(f"Bright Data CLI error: {process.stderr}")
-                
-            return process.stdout.strip()
-        except FileNotFoundError:
-            logger.error("Node.js/npx not found on system.")
-            raise
+BRIGHT_DATA_API_KEY = os.getenv("BRIGHT_DATA_API_KEY")
+BRIGHT_DATA_SERP_ZONE = os.getenv("BRIGHT_DATA_SERP_ZONE", "serp_api1")
+BRIGHT_DATA_API_BASE = "https://api.brightdata.com"
 
-    async def search(self, query: str) -> list[Dict[str, Any]]:
-        """Uses the real Bright Data SERP API to search the web."""
-        out = await self._run_bdata_cmd("search", query, "--json")
-        try:
-            data = json.loads(out)
-            return data.get("organic", [])
-        except json.JSONDecodeError:
-            logger.error("Failed to parse Bright Data search output as JSON")
-            return []
+
+class BrightDataClient:
+    async def search(self, query: str) -> List[Dict[str, Any]]:
+        """Uses Bright Data's SERP/Web Unlocker API to search Google and return organic results."""
+        if not BRIGHT_DATA_API_KEY:
+            raise RuntimeError("BRIGHT_DATA_API_KEY is not configured")
+
+        target_url = f"https://www.google.com/search?q={quote(query)}&brd_json=1"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{BRIGHT_DATA_API_BASE}/request",
+                headers={"Authorization": f"Bearer {BRIGHT_DATA_API_KEY}"},
+                json={"zone": BRIGHT_DATA_SERP_ZONE, "url": target_url, "format": "raw"},
+            )
+            response.raise_for_status()
+
+            try:
+                data = response.json()
+            except ValueError:
+                logger.error("Failed to parse Bright Data search response as JSON")
+                return []
+
+            return data.get("organic", data.get("organic_results", []))
 
     async def request_self_healing(self, collector_id: str) -> str:
-        out = await self._run_bdata_cmd("scraper", "heal", collector_id, "--json")
-        return out
+        # There's no real Bright Data endpoint for this workflow; it's simulated
+        # locally for the demo rather than calling out to an external service.
+        logger.info(f"Simulating self-healing request for {collector_id}")
+        return "healing_requested"
 
     async def approve_healing(self, collector_id: str) -> str:
-        out = await self._run_bdata_cmd("scraper", "approve", collector_id, "--json")
-        return out
+        logger.info(f"Simulating healing approval for {collector_id}")
+        return "healed"
+
 
 bright_data_client = BrightDataClient()
