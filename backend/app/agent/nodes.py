@@ -87,7 +87,9 @@ async def assess_evidence(state: WebDNAAgentState) -> Dict[str, Any]:
         data = json.loads(content.strip())
         is_sufficient = data.get("is_sufficient", False)
         evidence_gaps = data.get("evidence_gaps", [])
-        recommended_tool = data.get("recommended_tool", "")
+        # The LLM sometimes reports insufficient evidence but leaves the tool
+        # empty; fall back to a default so execute_tool always has a tool to run.
+        recommended_tool = data.get("recommended_tool") or "run_news_collector"
     except Exception as e:
         logger.error(f"LLM parsing failed: {e}. Falling back to default.")
         is_sufficient = False
@@ -116,8 +118,12 @@ async def execute_tool(state: WebDNAAgentState) -> Dict[str, Any]:
         return {"evidence_sufficient": True} # Force complete
         
     tool_to_run = state["tools_called"][-1]["tool"] if state["tools_called"] else None
+    if not tool_to_run:
+        logger.warning("No tool recommended; ending investigation")
+        return {"evidence_sufficient": True}
+
     logger.info(f"Executing tool: {tool_to_run}")
-    
+
     await record_agent_event(
         state['agent_run_id'], 
         "tool_call", 
