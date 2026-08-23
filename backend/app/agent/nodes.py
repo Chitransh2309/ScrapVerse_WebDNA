@@ -135,7 +135,7 @@ async def execute_tool(state: WebDNAAgentState) -> Dict[str, Any]:
     from app.agent.tools import run_products_collector, run_careers_collector, run_news_collector
     
     result = {"status": "success", "records_found": 0}
-    company_domain = "example.com" # Would be fetched from DB
+    company_domain = state.get("company_domain") or "example.com"
     
     try:
         if tool_to_run == "run_products_collector":

@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class WebDNAAgentState(TypedDict):
     company_id: str
+    company_domain: str
     mutation_id: str
     
     current_genome: Dict[str, float]

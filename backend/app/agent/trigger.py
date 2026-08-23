@@ -1,6 +1,7 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_models import AgentRun
+from app.db.models.core import Company
 from app.db.models.mutation_models import MutationCandidate
 from app.db.models.evidence_models import Evidence
 from app.db.models.genome_models import GenomeSnapshot
@@ -14,6 +15,9 @@ async def trigger_agent_investigation(mutation_id: str, company_id: str, db: Asy
     mutation = await db.get(MutationCandidate, mutation_id)
     if not mutation:
         return
+
+    company = await db.get(Company, company_id)
+    company_domain = company.domain if company else "example.com"
         
     mutation.investigation_status = "investigating"
     await db.commit()
@@ -63,7 +67,8 @@ async def trigger_agent_investigation(mutation_id: str, company_id: str, db: Asy
         current_genome,
         previous_genome,
         mutation_dict,
-        evidence_dicts
+        evidence_dicts,
+        company_domain
     )
     
     # 5. Save Results

@@ -36,18 +36,20 @@ agent_graph = build_investigation_graph()
 
 async def run_investigation(
     agent_run_id: str,
-    company_id: str, 
+    company_id: str,
     mutation_id: str,
     current_genome: dict,
     previous_genome: dict,
     mutation: dict,
-    evidence: list
+    evidence: list,
+    company_domain: str = "example.com"
 ):
     """Entry point to run the compiled graph."""
     logger.info(f"Starting LangGraph investigation for mutation {mutation_id}")
-    
+
     initial_state = {
         "company_id": company_id,
+        "company_domain": company_domain,
         "mutation_id": mutation_id,
         "current_genome": current_genome,
         "previous_genome": previous_genome,
