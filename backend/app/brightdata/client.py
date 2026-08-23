@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from typing import Dict, Any, List
 from urllib.parse import quote
@@ -28,12 +29,15 @@ class BrightDataClient:
             response.raise_for_status()
 
             try:
-                data = response.json()
-            except ValueError:
-                logger.error("Failed to parse Bright Data search response as JSON")
+                envelope = response.json()
+                # api.brightdata.com/request wraps the actual page response in an
+                # envelope; the parsed SERP JSON is a JSON *string* inside "body".
+                body = json.loads(envelope["body"])
+            except (ValueError, KeyError, TypeError):
+                logger.error("Failed to parse Bright Data search response")
                 return []
 
-            return data.get("organic", data.get("organic_results", []))
+            return body.get("organic", [])
 
     async def request_self_healing(self, collector_id: str) -> str:
         # There's no real Bright Data endpoint for this workflow; it's simulated
