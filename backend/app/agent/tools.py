@@ -12,35 +12,31 @@ logger = logging.getLogger(__name__)
 
 @tool
 async def run_products_collector(company_domain: str) -> Dict[str, Any]:
-    """Runs the Bright Data products collector to find new structural product evidence."""
-    # In a real scenario we'd lookup collector_id by domain. Here we use dummy ID.
-    collector_id = "c_products_123"
-    logger.info(f"Running products collector for {company_domain}")
+    """Runs a Bright Data search to find new structural product evidence."""
+    logger.info(f"Running products search for {company_domain}")
     try:
-        run_id = await bright_data_client.trigger_collector(collector_id, {"url": f"https://{company_domain}/products"})
-        return {"status": "success", "run_id": run_id, "records_found": 3} # Mocking result
+        results = await bright_data_client.search(f"{company_domain} new products OR features OR launch")
+        return {"status": "success", "records_found": len(results), "results": results[:5]}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
 @tool
 async def run_careers_collector(company_domain: str) -> Dict[str, Any]:
-    """Runs the Bright Data careers collector to find new hiring signals."""
-    collector_id = "c_careers_123"
-    logger.info(f"Running careers collector for {company_domain}")
+    """Runs a Bright Data search to find new hiring signals."""
+    logger.info(f"Running careers search for {company_domain}")
     try:
-        run_id = await bright_data_client.trigger_collector(collector_id, {"url": f"https://{company_domain}/careers"})
-        return {"status": "success", "run_id": run_id, "records_found": 12}
+        results = await bright_data_client.search(f"{company_domain} careers hiring jobs")
+        return {"status": "success", "records_found": len(results), "results": results[:5]}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
 @tool
 async def run_news_collector(company_domain: str) -> Dict[str, Any]:
-    """Runs the Bright Data news collector to find new announcement evidence."""
-    collector_id = "c_news_123"
-    logger.info(f"Running news collector for {company_domain}")
+    """Runs a Bright Data search to find new announcement evidence."""
+    logger.info(f"Running news search for {company_domain}")
     try:
-        run_id = await bright_data_client.trigger_collector(collector_id, {"url": f"https://{company_domain}/news"})
-        return {"status": "success", "run_id": run_id, "records_found": 5}
+        results = await bright_data_client.search(f"{company_domain} news announcement")
+        return {"status": "success", "records_found": len(results), "results": results[:5]}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
