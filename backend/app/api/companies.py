@@ -17,6 +17,7 @@ class CompanyCreate(BaseModel):
     domain: Optional[str] = None
 
 from app.db.models.evidence_models import Source
+from app.db.models.scraper_models import ScraperHealth
 
 
 def _provision_sources(db_company_id: str, company_name: str, domain: str) -> list[Source]:
@@ -26,6 +27,19 @@ def _provision_sources(db_company_id: str, company_name: str, domain: str) -> li
             type=src_type,
             url=f"https://{domain}/{src_type}",
             collector_id=f"serp_{src_type}_{company_name.lower().replace(' ', '_')}"
+        )
+        for src_type in ["careers", "products", "news"]
+    ]
+
+
+def _provision_scraper_health(db_company_id: str, company_name: str) -> list[ScraperHealth]:
+    slug = company_name.lower().replace(' ', '_')
+    return [
+        ScraperHealth(
+            company_id=db_company_id,
+            collector_id=f"serp_{src_type}_{slug}",
+            name=f"{src_type.capitalize()} Collector",
+            status="healthy"
         )
         for src_type in ["careers", "products", "news"]
     ]
@@ -61,6 +75,8 @@ async def _finalize_domain_and_sources(company_id: str, company_name: str):
             db_company.domain = domain
             for src in _provision_sources(company_id, company_name, domain):
                 db.add(src)
+            for sh in _provision_scraper_health(company_id, company_name):
+                db.add(sh)
             await db.commit()
         except Exception as e:
             logger.error(f"Failed to finalize domain/sources for '{company_name}': {e}")
@@ -76,6 +92,8 @@ async def create_company(company: CompanyCreate, background_tasks: BackgroundTas
         await db.commit()
         for src in _provision_sources(db_company.id, company.name, company.domain):
             db.add(src)
+        for sh in _provision_scraper_health(db_company.id, company.name):
+            db.add(sh)
         await db.commit()
         return {"id": db_company.id, "name": db_company.name, "domain": db_company.domain}
 

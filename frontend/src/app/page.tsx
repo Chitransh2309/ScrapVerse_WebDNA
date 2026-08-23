@@ -69,13 +69,19 @@ export default function Home() {
 
       // Poll the actual job status instead of assuming it's done after a fixed delay -
       // sequencing (genome build + mutation detection + agent investigations) can take
-      // anywhere from seconds to several minutes.
-      while (true) {
+      // anywhere from seconds to several minutes. Cap it so a job that never reaches
+      // a terminal status (e.g. abandoned by a server restart) can't poll forever -
+      // the backend also self-heals stale jobs, but this is a client-side backstop.
+      const maxAttempts = 120 // 120 * 3s = 6 minutes
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         await new Promise(r => setTimeout(r, 3000))
         const job_status = await fetchSequenceStatus(selectedCompanyId, job.job_id)
         setSequenceStatus(job_status.status)
         if (job_status.status === "completed" || job_status.status === "failed" || job_status.error) {
           break
+        }
+        if (attempt === maxAttempts - 1) {
+          throw new Error("Sequence timed out")
         }
       }
     } catch (e) {
