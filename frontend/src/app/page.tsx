@@ -63,8 +63,7 @@ export default function Home() {
     if (!newCompanyName.trim()) return
     setIsAdding(true)
     try {
-      const domain = newCompanyName.trim().toLowerCase().replace(/\s+/g, '') + '.com'
-      const newCompany = await createCompany(newCompanyName.trim(), domain)
+      const newCompany = await createCompany(newCompanyName.trim())
       const freshCompanies = await fetchCompanies()
       setCompanies(freshCompanies)
       setSelectedCompanyId(newCompany.id)

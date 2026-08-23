@@ -40,11 +40,11 @@ export async function triggerSequence(companyId: string) {
   return res.json()
 }
 
-export async function createCompany(name: string, domain: string) {
+export async function createCompany(name: string) {
   const res = await fetch(`${API_BASE}/companies`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, domain })
+    body: JSON.stringify({ name })
   })
   return res.json()
 }
