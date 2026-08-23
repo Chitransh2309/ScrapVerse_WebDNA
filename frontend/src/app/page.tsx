@@ -1,12 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { fetchCompanies, fetchGenome, fetchMutations, fetchAgentRuns, fetchScrapers, triggerSequence, createCompany } from "@/lib/api"
+import { fetchCompanies, fetchGenome, fetchMutations, fetchAgentRuns, fetchScrapers, triggerSequence, createCompany, API_BASE } from "@/lib/api"
 import { Activity, AlertTriangle, ShieldAlert, Cpu, HeartPulse, RefreshCw, Plus } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { format } from 'date-fns'
-
-const API_BASE = "http://localhost:8000/api"
 
 export default function Home() {
   const [companies, setCompanies] = useState<any[]>([])

@@ -24,8 +24,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set database URL from env
-db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./webdna.db")
+# Set database URL from env. Migrations use DIRECT_URL when set, since Alembic's
+# advisory locking and DDL don't work reliably over Supabase's transaction-mode
+# PgBouncer pooler (DATABASE_URL).
+db_url = os.environ.get("DIRECT_URL") or os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./webdna.db")
 config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
@@ -48,10 +50,15 @@ def do_run_migrations(connection: Connection) -> None:
         context.run_migrations()
 
 async def run_async_migrations() -> None:
+    connect_args = {}
+    if db_url.startswith("postgresql+asyncpg"):
+        connect_args["statement_cache_size"] = 0
+
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
