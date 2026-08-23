@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import logging
 from typing import Dict, Any, Literal
 from app.agent.state import WebDNAAgentState
@@ -18,6 +19,16 @@ llm = ChatOpenAI(
     base_url=os.getenv("LLM_BASE_URL"),
     model=os.getenv("LLM_MODEL", "google/gemma-2-9b-it")
 )
+
+
+def _extract_json(content: str) -> dict:
+    """Pulls a JSON object out of an LLM response, tolerating markdown code
+    fences and any stray text around them (naive slicing broke whenever the
+    model's formatting didn't match exactly)."""
+    match = re.search(r"\{.*\}", content, re.DOTALL)
+    if not match:
+        raise ValueError(f"No JSON object found in LLM response: {content!r}")
+    return json.loads(match.group(0))
 
 # Structured Output Models
 class EvidenceAssessment(BaseModel):
@@ -78,13 +89,7 @@ async def assess_evidence(state: WebDNAAgentState) -> Dict[str, Any]:
             HumanMessage(content=prompt)
         ])
         
-        content = response.content
-        if content.startswith("```json"):
-            content = content[7:-3]
-        elif content.startswith("```"):
-            content = content[3:-3]
-            
-        data = json.loads(content.strip())
+        data = _extract_json(response.content)
         is_sufficient = data.get("is_sufficient", False)
         evidence_gaps = data.get("evidence_gaps", [])
         # The LLM sometimes reports insufficient evidence but leaves the tool
@@ -194,22 +199,18 @@ async def generate_interpretation(state: WebDNAAgentState) -> Dict[str, Any]:
             HumanMessage(content=prompt)
         ])
         
-        content = response.content
-        if content.startswith("```json"):
-            content = content[7:-3]
-        elif content.startswith("```"):
-            content = content[3:-3]
-            
-        final_analysis = json.loads(content.strip())
+        final_analysis = _extract_json(response.content)
         final_analysis["evidence_references"] = [ev.get("id", "new") for ev in state["evidence"]]
     except Exception as e:
         logger.error(f"Final LLM parsing failed: {e}")
+        mutation = state["mutation"]
+        direction = "increased" if mutation["delta"] > 0 else "decreased"
         final_analysis = {
-            "summary": "NVIDIA is rapidly expanding its robotics division.",
-            "what_changed": "Significant increase in hiring for robotics engineers and simulation researchers.",
-            "why_it_matters": "This signals a strategic shift beyond GPUs into autonomous machines.",
-            "possible_implication": "NVIDIA aims to own the full stack for physical AI.",
-            "evidence_references": []
+            "summary": f"{mutation['trait']} {direction} by {abs(mutation['percentage_change']):.1f}% ({mutation['severity']} severity), but the AI analysis could not be generated for this run.",
+            "what_changed": f"{mutation['trait']} {direction} from the previous baseline ({mutation['mutation_type']}).",
+            "why_it_matters": "Automated interpretation was unavailable; review the collected evidence directly to assess significance.",
+            "possible_implication": "Unknown - re-run the investigation or review evidence manually.",
+            "evidence_references": [ev.get("id", "new") for ev in state["evidence"]]
         }
         
     await record_agent_event(
